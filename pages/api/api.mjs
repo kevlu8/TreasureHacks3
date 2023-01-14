@@ -15,12 +15,18 @@ import express from "express";
 // const bodyparser = require("body-parser");
 import bodyparser from "body-parser";
 
+var db;
+
 const app = express();
 app.use(bodyparser.json());
+app.use((req, res, next) => {
+	console.log("got a request");
+	db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READWRITE);
+	next();
+	db.close();
+});
 
 dotenv.config();
-
-const db = new sqlite3.Database("../data/db.db", sqlite3.OPEN_READWRITE);
 
 // export default function handler(req, res) {
 // 	console.log(req.body);
@@ -29,7 +35,8 @@ const db = new sqlite3.Database("../data/db.db", sqlite3.OPEN_READWRITE);
 
 // ---- USER FUNCTIONS ----
 
-app.post("/register", (rceq, res) => {
+app.post("/api/register", (req, res) => {
+	console.log("got a post");
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	console.log("got a post");
@@ -96,7 +103,7 @@ app.post("/register", (rceq, res) => {
 	// });
 });
 
-app.post("login", (req, res) => {
+app.post("/apilogin", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	const { username, password } = req.body;
@@ -166,7 +173,7 @@ app.post("login", (req, res) => {
 
 // ---- POST FUNCTIONS ----
 
-app.post("/post/create", (req, res) => {
+app.post("/api/post/create", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	if (!valid(req.body.token))
@@ -204,7 +211,7 @@ app.post("/post/create", (req, res) => {
 	res.status(200).json({ success: true, id: id });
 });
 
-app.put("/post/:id/upload", (req, res) => {
+app.put("/api/post/:id/upload", (req, res) => {
 	if (req.method !== "PUT")
 		return res.status(405).end("Can only PUT to this endpoint");
 	if (!valid(req.query.token))
@@ -267,7 +274,7 @@ app.put("/post/:id/upload", (req, res) => {
 	// });
 });
 
-app.post("/post/:id/comment", (req, res) => {
+app.post("/api/post/:id/comment", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	if (!valid(req.body.token))
@@ -325,7 +332,7 @@ app.post("/post/:id/comment", (req, res) => {
 	// });
 });
 
-app.post("/post/:id/upvote", (req, res) => {
+app.post("/api/post/:id/upvote", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	if (!valid(req.body.token))
@@ -363,7 +370,7 @@ app.post("/post/:id/upvote", (req, res) => {
 	// });
 });
 
-app.post("/post/:id/downvote", (req, res) => {
+app.post("/api/post/:id/downvote", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	if (!valid(req.body.token))
@@ -400,7 +407,7 @@ app.post("/post/:id/downvote", (req, res) => {
 	// });
 });
 
-app.post("/post/:id/report", (req, res) => {
+app.post("/api/post/:id/report", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	let data, check, msgcontent;
@@ -449,7 +456,7 @@ app.post("/post/:id/report", (req, res) => {
 	}
 });
 
-app.post("/post/:pid/comment/:cid/upvote", (req, res) => {
+app.post("/api/post/:pid/comment/:cid/upvote", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	let data;
@@ -470,7 +477,7 @@ app.post("/post/:pid/comment/:cid/upvote", (req, res) => {
 	});
 });
 
-app.post("/post/:pid/comment/:cid/downvote", (req, res) => {
+app.post("/api/post/:pid/comment/:cid/downvote", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	let data;
@@ -491,7 +498,7 @@ app.post("/post/:pid/comment/:cid/downvote", (req, res) => {
 	});
 });
 
-app.post("/post/:pid/comment/:cid/report", (req, res) => {
+app.post("/api/post/:pid/comment/:cid/report", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	let data, check, msgcontent;
@@ -540,7 +547,7 @@ app.post("/post/:pid/comment/:cid/report", (req, res) => {
 
 // ---- GET FUNCTIONS ----
 
-app.get("/post/:id/comments", (req, res) => {
+app.get("/api/post/:id/comments", (req, res) => {
 	if (req.method !== "GET")
 		return res.status(405).end("Can only GET this endpoint");
 });
