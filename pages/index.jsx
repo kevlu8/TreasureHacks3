@@ -23,7 +23,16 @@ export default function Home() {
 				<Navbar />
 
 				<div className="flex flex-col justify-center items-center">
-          <Post data={{title: "test"}} text="this is a test post. everything should be fucked and also we are like 5hrs behind schedual send help"/>
+          	<Post 
+				className = "z-20"
+				data={{
+					title: "test", 
+					skill: {
+						logo: "/logo/logo_primary.png"
+					}
+				}} 
+				text="this is a test post. everything should be fucked and also we are like 5hrs behind schedual send help"
+			/>
         </div>
 			</main>
 		</>

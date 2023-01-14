@@ -17,15 +17,16 @@ module.exports = {
       "2xl": "1536px",
     },
     colors: {
-      "text-primary": "#007bc7",
-      "text-primary-variant": "#0098f7",
+      "text-primary": "#0098f7",
+      "text-primary-variant": "#007bc7",
       "text-header": "#FFFFFFE6",
       "text-body": "#FFFFFF99",
       "bg-primary": "#111d25",
       "bg-secondary": "#1c2830",
       "bg-tertiary": "#202c34",
       "border": "#FFFFFF0D",
-      black: colors.black
+      black: colors.black,
+      transparent: "transparent"
     },
     extend: {
       fontFamily: {

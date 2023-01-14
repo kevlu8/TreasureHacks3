@@ -1,11 +1,18 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
 
+// const chatgpt = require("chatgpt");
+// import chatgpt from "chatgpt";
 import { ChatGPTAPIBrowser } from "chatgpt";
-import * as fs from "fs";
+// const { ChatGPTAPIBrowser } = require("chatgpt");
+// const dotenv = require("dotenv");
 import dotenv from "dotenv";
+// const crypto = require("crypto");
 import crypto from "crypto";
+// const sqlite3 = require("sqlite3");
 import sqlite3 from "sqlite3";
+// const express = require("express");
 import express from "express";
+// const bodyparser = require("body-parser");
 import bodyparser from "body-parser";
 
 const app = express();
@@ -13,16 +20,16 @@ app.use(bodyparser.json());
 
 dotenv.config();
 
-const db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READWRITE);
+const db = new sqlite3.Database("../data/db.db", sqlite3.OPEN_READWRITE);
 
-export default function handler(req, res) {
-	console.log(req.body);
-	res.status(200).json({ success: true });
-}
+// export default function handler(req, res) {
+// 	console.log(req.body);
+// 	res.status(200).json({ success: true });
+// }
 
 // ---- USER FUNCTIONS ----
 
-app.post("/register", (req, res) => {
+app.post("/register", (rceq, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	console.log("got a post");
@@ -89,7 +96,7 @@ app.post("/register", (req, res) => {
 	// });
 });
 
-export function login(req, res) {
+app.post("login", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	const { username, password } = req.body;
@@ -155,11 +162,11 @@ export function login(req, res) {
 	// 	}
 	// 	res.status(200).json({ success: true });
 	// });
-}
+});
 
 // ---- POST FUNCTIONS ----
 
-export function createPost(req, res) {
+app.post("/post/create", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	if (!valid(req.body.token))
@@ -195,15 +202,15 @@ export function createPost(req, res) {
 		}
 	});
 	res.status(200).json({ success: true, id: id });
-}
+});
 
-export function uploadVideo(req, res) {
+app.put("/post/:id/upload", (req, res) => {
 	if (req.method !== "PUT")
 		return res.status(405).end("Can only PUT to this endpoint");
 	if (!valid(req.query.token))
 		return res.status(401).json({ error: "Unauthorized" });
 	// check if the id exists
-	db.get("SELECT * FROM posts WHERE id = ?", [req.query.id], (err, row) => {
+	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
 		if (err) {
 			res.status(500).json({ error: "Internal Server Error" });
 			return;
@@ -258,15 +265,15 @@ export function uploadVideo(req, res) {
 	// 		return;
 	// 	}
 	// });
-}
+});
 
-export function uploadComment(req, res) {
+app.post("/post/:id/comment", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	if (!valid(req.body.token))
 		return res.status(401).json({ error: "Unauthorized" });
 	// check if the id exists
-	db.get("SELECT * FROM posts WHERE id = ?", [req.body.id], (err, row) => {
+	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
 		if (err) {
 			res.status(500).json({ error: "Internal Server Error" });
 			return;
@@ -290,7 +297,7 @@ export function uploadComment(req, res) {
 		// insert into database
 		db.run(
 			"INSERT INTO comments (id, parent, creator, flags, karma, content) VALUES (?, ?, ?, ?, ?, ?)",
-			[id, req.body.id, req.body.user, 0, 0, req.body.comment]
+			[id, req.post.id, req.body.user, 0, 0, req.body.comment]
 		);
 		res.status(200).json({ success: true });
 	});
@@ -316,15 +323,15 @@ export function uploadComment(req, res) {
 	// 		return;
 	// 	}
 	// });
-}
+});
 
-export function upvotePost(req, res) {
+app.post("/post/:id/upvote", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	if (!valid(req.body.token))
 		return res.status(401).json({ error: "Unauthorized" });
 	// check if the id exists
-	db.get("SELECT * FROM posts WHERE id = ?", [req.body.id], (err, row) => {
+	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
 		if (err) {
 			res.status(500).json({ error: "Internal Server Error" });
 			return;
@@ -334,7 +341,7 @@ export function upvotePost(req, res) {
 			return;
 		}
 		// update database
-		db.run("UPDATE posts SET karma = karma + 1 WHERE id = ?", [req.body.id]);
+		db.run("UPDATE posts SET karma = karma + 1 WHERE id = ?", [req.params.id]);
 		res.status(200).json({ success: true });
 	});
 	// // req.body.postId
@@ -354,15 +361,15 @@ export function upvotePost(req, res) {
 	// 		return;
 	// 	}
 	// });
-}
+});
 
-export function downvotePost(req, res) {
+app.post("/post/:id/downvote", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	if (!valid(req.body.token))
 		return res.status(401).json({ error: "Unauthorized" });
 	// check if the id exists
-	db.get("SELECT * FROM posts WHERE id = ?", [req.body.id], (err, row) => {
+	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
 		if (err) {
 			res.status(500).json({ error: "Internal Server Error" });
 			return;
@@ -372,7 +379,7 @@ export function downvotePost(req, res) {
 			return;
 		}
 		// update database
-		db.run("UPDATE posts SET karma = karma - 1 WHERE id = ?", [req.body.id]);
+		db.run("UPDATE posts SET karma = karma - 1 WHERE id = ?", [req.params.id]);
 		res.status(200).json({ success: true });
 	});
 	// let data;
@@ -391,9 +398,9 @@ export function downvotePost(req, res) {
 	// 		return;
 	// 	}
 	// });
-}
+});
 
-export function reportPost(req, res) {
+app.post("/post/:id/report", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	let data, check, msgcontent;
@@ -440,9 +447,9 @@ export function reportPost(req, res) {
 			});
 		}
 	}
-}
+});
 
-export function upvoteComment(req, res) {
+app.post("/post/:pid/comment/:cid/upvote", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	let data;
@@ -461,9 +468,9 @@ export function upvoteComment(req, res) {
 			return;
 		}
 	});
-}
+});
 
-export function downvoteComment(req, res) {
+app.post("/post/:pid/comment/:cid/downvote", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	let data;
@@ -482,9 +489,9 @@ export function downvoteComment(req, res) {
 			return;
 		}
 	});
-}
+});
 
-export function reportComment(req, res) {
+app.post("/post/:pid/comment/:cid/report", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	let data, check, msgcontent;
@@ -529,13 +536,16 @@ export function reportComment(req, res) {
 			});
 		}
 	}
-}
+});
 
 // ---- GET FUNCTIONS ----
 
-export function getComments(req, res) {}
+app.get("/post/:id/comments", (req, res) => {
+	if (req.method !== "GET")
+		return res.status(405).end("Can only GET this endpoint");
+});
 
-export function getPosts(req, res) {
+function getPosts(req, res) {
 	if (req.body.skill === "all") {
 		// do stuff
 	} else {
@@ -546,7 +556,7 @@ export function getPosts(req, res) {
 // --------- ASYNC FUNCTIONS ---------
 
 async function __verifyReport(msg) {
-	const api = new ChatGPTAPIBrowser({
+	const api = new chatgpt.ChatGPTAPIBrowser({
 		email: process.env.EMAIL,
 		password: process.env.PASSWORD,
 		markdown: false,
@@ -566,8 +576,8 @@ async function __verifyReport(msg) {
 	}
 }
 
-export async function stagingAnswer(req, res) {
-	const api = new ChatGPTAPIBrowser({
+async function stagingAnswer(req, res) {
+	const api = new chatgpt.ChatGPTAPIBrowser({
 		email: process.env.EMAIL,
 		password: process.env.PASSWORD,
 		markdown: false,
@@ -580,4 +590,4 @@ export async function stagingAnswer(req, res) {
 	res.status(200).json({ answer: result.response });
 }
 
-express.listen(3001);
+app.listen(3001);

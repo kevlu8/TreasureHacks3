@@ -2,11 +2,13 @@ import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import axios from "axios";
+// import fetch from "fetch";
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faMagnifyingGlass } from "@fortawesome/free-solid-svg-icons";
+import { faKeycdn } from "@fortawesome/free-brands-svg-icons";
 
-import Button from "../button/Button";
+import Button from "../button/PrimaryButton";
 import Modal from "../modal/Modal";
 import TextField from "../textField/TextField";
 
@@ -15,7 +17,7 @@ const axiosInst = axios.create({
 });
 
 function Navbar(props) {
-	const [searchContent, setSearchContent] = useState("");
+	const [searchContent, setSearchContent] = useState("");	
 	const [showLogin, setShowLogin] = useState(false);
 	const [showRegister, setShowRegister] = useState(false);
   const [registerData, setRegisterData] = useState({email: "", username: "", password: "", confirmPassword: ""});
@@ -96,10 +98,6 @@ function Navbar(props) {
 			<div>
 				<Button
 					text="Login"
-					textColor="bg-secondary"
-					bgColor="text-primary"
-					hoverColor="bg-secondary"
-					hoverBg="text-primary-variant"
 					onClick={() => {
 						setShowLogin((prev) => !prev);
 					}}
@@ -110,32 +108,40 @@ function Navbar(props) {
 				<Modal
 					updateShow={() => setShowLogin((prev) => !prev)}
 					bgColor="bg-secondary"
-					title="Login"
+					title={
+						<>
+							<FontAwesomeIcon
+								icon={faKeycdn}
+								className="text-4xl mr-2 text-text-primary"
+							/>
+							Login
+						</>
+					}
 					content={
 						<div>
-							<TextField 
-                name="Username" 
-                textType="text" 
-                autoComplete="off" 
-                mb="mb-4"
-                val={loginData.username}
-                setVal={setLogUsername}
-              />
-							<TextField 
-                name="Email" 
-                textType="text" 
-                autoComplete="off" 
-                mb="mb-4"
-                val={loginData.email}
-                setVal={setLogEmail}
-              />
+							<TextField
+								name="Username"
+								textType="text"
+								autoComplete="off"
+								mb="mb-4"
+								val={loginData.username}
+								setVal={setLogUsername}
+							/>
+							<TextField
+								name="Email"
+								textType="text"
+								autoComplete="off"
+								mb="mb-4"
+								val={loginData.email}
+								setVal={setLogEmail}
+							/>
 							<TextField
 								name="Password"
 								textType="password"
 								autoComplete="off"
-                mb="mb-4"
-                val={loginData.password}
-                setVal={setLogPassword}
+								mb="mb-4"
+								val={loginData.password}
+								setVal={setLogPassword}
 							/>
 
 							<div className="flex flex-row justify-center items-center mb-8 mt-8">
@@ -146,20 +152,23 @@ function Navbar(props) {
 									hoverColor="bg-secondary"
 									hoverBg="text-primary-variant"
 									// onClick="write stuff here robert"
-                  onClick={async() => {
-                    if (loginData.username == "") {
-                      console.log("no username");
-                    } else if (loginData.password == "") {
-                      console.log("no password");
-                    } else {
-                      let res = await axios.post("/api/pages/login", {username: loginData.username, password: loginData.password});
-                      if (res.status == 200) {
-                        //passed, add login to cookie/session
-                      } else {
-                        //smt went wrong
-                      }
-                    }
-                  }}
+									onClick={async () => {
+										if (loginData.username == "") {
+											console.log("no username");
+										} else if (loginData.password == "") {
+											console.log("no password");
+										} else {
+											let res = await axios.post("/api/pages/login", {
+												username: loginData.username,
+												password: loginData.password,
+											});
+											if (res.status == 200) {
+												//passed, add login to cookie/session
+											} else {
+												//smt went wrong
+											}
+										}
+									}}
 								/>
 							</div>
 
@@ -224,7 +233,7 @@ function Navbar(props) {
 							/>
 
 							<div className="flex flex-row justify-center items-center mb-8 mt-8">
-                <Button
+								<Button
 									text="Register"
 									textColor="bg-secondary"
 									bgColor="text-primary"
@@ -246,7 +255,7 @@ function Navbar(props) {
 											console.log("passwords dont match");
 										} else {
 											console.log("posted");
-											let res = await axios.post("api/api/register", {
+											let res = await axios.post("/api/register", {
 												email: registerData.email,
 												username: registerData.username,
 												password: registerData.password,
@@ -262,7 +271,6 @@ function Navbar(props) {
 
 							<span>
 								Have an account?
-								
 								<a
 									onClick={() => {
 										setShowLogin((prev) => !prev);
@@ -271,7 +279,6 @@ function Navbar(props) {
 									className="ml-1 animate-underline text-base text-text-primary cursor-pointer hover:text-text-primary-variant"
 								>
 									Login
-
 									<span className="text-underline"></span>
 								</a>
 							</span>
