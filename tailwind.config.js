@@ -24,7 +24,8 @@ module.exports = {
       "bg-primary": "#111d25",
       "bg-secondary": "#1c2830",
       "bg-tertiary": "#202c34",
-      "border": "#FFFFFF0D",
+      border: "#FFFFFF0D",
+      error: "#DC2626",
       black: colors.black,
       transparent: "transparent"
     },

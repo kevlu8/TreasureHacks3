@@ -19,6 +19,10 @@ html {
   background-color: #111d25;
 }
 
+body {
+  padding-bottom: 5rem;
+}
+
 .animate-underline {
   display: inline-block;
   position: relative;

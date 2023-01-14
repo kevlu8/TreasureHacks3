@@ -103,7 +103,7 @@ app.post("/api/register", (req, res) => {
 	// });
 });
 
-app.post("/apilogin", (req, res) => {
+app.post("/api/login", (req, res) => {
 	if (req.method !== "POST")
 		return res.status(405).end("Can only POST to this endpoint");
 	const { username, password } = req.body;

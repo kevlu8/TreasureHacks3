@@ -1,72 +1,97 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import axios from "axios";
-// import fetch from "fetch";
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faMagnifyingGlass } from "@fortawesome/free-solid-svg-icons";
 import { faKeycdn } from "@fortawesome/free-brands-svg-icons";
 
-import Button from "../button/PrimaryButton";
+import PrimaryButton from "../button/PrimaryButton";
 import Modal from "../modal/Modal";
 import TextField from "../textField/TextField";
 
 const axiosInst = axios.create({
-  baseURL: "/api",
+	baseURL: "/api",
+	// proxy: {
+	// 	protocol: "http",
+	// 	host: "108.173.181.98",
+	// 	port: 8080,
+	// },
 });
 
 function Navbar(props) {
 	const [searchContent, setSearchContent] = useState("");	
 	const [showLogin, setShowLogin] = useState(false);
 	const [showRegister, setShowRegister] = useState(false);
-  const [registerData, setRegisterData] = useState({email: "", username: "", password: "", confirmPassword: ""});
-  const [loginData, setLoginData] = useState({email: "", username: "", password: ""});
+	const [registerData, setRegisterData] = useState({email: "", username: "", password: "", confirmPassword: ""});
+	const [registerError, setRegisterError] = useState(false);
+	const [loginData, setLoginData] = useState({email: "", username: "", password: ""});
+	const [loginError, setLoginError] = useState(false);
   
-  function setRegEmail(e) {
-    let buf = {...registerData};
-    buf.email = e.target.value;
-    setRegisterData(buf);
-  }
-  
-  function setRegUsername(e) {
-    let buf = {...registerData};
-    buf.username = e.target.value;
-    setRegisterData(buf);
-  }
+	function setRegEmail(e) {
+		let buf = {...registerData};
+		buf.email = e.target.value;
+		setRegisterData(buf);
+	}
 
-  function setRegPassword(e) {
-    let buf = {...registerData};
-    buf.password = e.target.value;
-    setRegisterData(buf);
-  }
+	function setRegUsername(e) {
+		let buf = {...registerData};
+		buf.username = e.target.value;
+		setRegisterData(buf);
+	}
 
-  function setRegConfirmPassword(e) {
-    let buf = {...registerData};
-    buf.confirmPassword = e.target.value;
-    setRegisterData(buf);
-  }
+	function setRegPassword(e) {
+		let buf = {...registerData};
+		buf.password = e.target.value;
+		setRegisterData(buf);
+	}
 
-  function setLogEmail(e) {
-    let buf = {...loginData};
-    buf.email = e.target.value;
-    setLoginData(buf);
-  }
-  
-  function setLogUsername(e) {
-    let buf = {...loginData};
-    buf.username = e.target.value;
-    setLoginData(buf);
-  }
+	function setRegConfirmPassword(e) {
+		let buf = {...registerData};
+		buf.confirmPassword = e.target.value;
+		setRegisterData(buf);
+	}
 
-  function setLogPassword(e) {
-    let buf = {...loginData};
-    buf.password = e.target.value;
-    setLoginData(buf);
-  }
+	function setLogEmail(e) {
+		let buf = {...loginData};
+		buf.email = e.target.value;
+		setLoginData(buf);
+	}
+
+	function setLogUsername(e) {
+		let buf = {...loginData};
+		buf.username = e.target.value;
+		setLoginData(buf);
+	}
+
+	function setLogPassword(e) {
+		let buf = {...loginData};
+		buf.password = e.target.value;
+		setLoginData(buf);
+	}
+
+	useEffect(() => {
+		if (showLogin == true) {
+			document.body.style.overflow = "hidden";
+		} else {
+			document.body.style.overflow = "unset";
+		}
+	}, [showLogin]);
 
 	return (
-		<nav className="bg-bg-secondary border-0 border-b border-b-border py-2 px-6 flex flex-row justify-between items-center">
+		<nav className="fixed bg-fixed right-0 left-0 top-0 z-20 bg-bg-secondary border-0 border-b border-b-border py-2 px-6 flex flex-row justify-between items-center">
+			{/* <button onClick={async() => {
+				axios.post("http://localhost:3001/api/register", {
+					email: "e",
+					username: "u",
+					password: "p",
+					confirmPassword: "p",
+				});
+			}}>
+				test axios
+			</button> */}
+
 			<Link href="/">
 				<Image
 					src="/logo/logo_primary.png"
@@ -96,7 +121,7 @@ function Navbar(props) {
 			</div>
 
 			<div>
-				<Button
+				<PrimaryButton
 					text="Login"
 					onClick={() => {
 						setShowLogin((prev) => !prev);
@@ -127,14 +152,14 @@ function Navbar(props) {
 								val={loginData.username}
 								setVal={setLogUsername}
 							/>
-							<TextField
+							{/* <TextField
 								name="Email"
 								textType="text"
 								autoComplete="off"
 								mb="mb-4"
 								val={loginData.email}
 								setVal={setLogEmail}
-							/>
+							/> */}
 							<TextField
 								name="Password"
 								textType="password"
@@ -143,9 +168,10 @@ function Navbar(props) {
 								val={loginData.password}
 								setVal={setLogPassword}
 							/>
+							{loginError ? <p1 className="text-error">{loginError}</p1>: ""}
 
-							<div className="flex flex-row justify-center items-center mb-8 mt-8">
-								<Button
+							<div className="flex flex-row justify-center items-center mb-6 mt-10">
+								<PrimaryButton
 									text="Login"
 									textColor="bg-secondary"
 									bgColor="text-primary"
@@ -154,9 +180,9 @@ function Navbar(props) {
 									// onClick="write stuff here robert"
 									onClick={async () => {
 										if (loginData.username == "") {
-											console.log("no username");
+											setLoginError("Adjoute un username s'il vous plaît");
 										} else if (loginData.password == "") {
-											console.log("no password");
+											setLoginError("Adjoute un password s'il vous plaît");
 										} else {
 											let res = await axios.post("/api/pages/login", {
 												username: loginData.username,
@@ -172,7 +198,7 @@ function Navbar(props) {
 								/>
 							</div>
 
-							<span>
+							<span className="block text-center">
 								New to ezSkill?
 								<a
 									onClick={() => {
@@ -207,14 +233,14 @@ function Navbar(props) {
 								setVal={setRegUsername}
 								val={registerData.username}
 							/>
-							<TextField
+							{/* <TextField
 								mb="mb-4"
 								name="Email"
 								textType="text"
 								autoComplete="off"
 								setVal={setRegEmail}
 								val={registerData.email}
-							/>
+							/> */}
 							<TextField
 								mb="mb-4"
 								name="Password"
@@ -231,9 +257,10 @@ function Navbar(props) {
 								setVal={setRegConfirmPassword}
 								val={registerData.confirmPassword}
 							/>
+							{registerError ? <p1 className="text-error">{registerError}</p1>: ""}
 
-							<div className="flex flex-row justify-center items-center mb-8 mt-8">
-								<Button
+							<div className="flex flex-row justify-center items-center mb-6 mt-10">
+								<PrimaryButton
 									text="Register"
 									textColor="bg-secondary"
 									bgColor="text-primary"
@@ -243,19 +270,19 @@ function Navbar(props) {
 										e.preventDefault();
 
 										if (registerData.username == "") {
-											console.log("no username");
+											setRegisterError("Adjoute un username s'il vous plaît");
 										} else if (
 											registerData.password == "" ||
 											registerData.confirmPassword == ""
 										) {
-											console.log("no password");
+											setRegisterError("Adjoute un password s'il vous plaît");
 										} else if (
 											registerData.password != registerData.confirmPassword
 										) {
-											console.log("passwords dont match");
+											setRegisterError("Les passewords ne correspondent pas");
 										} else {
 											console.log("posted");
-											let res = await axios.post("/api/register", {
+											let res = await axios.post("localhost:8080/register", {
 												email: registerData.email,
 												username: registerData.username,
 												password: registerData.password,
@@ -269,7 +296,7 @@ function Navbar(props) {
 								/>
 							</div>
 
-							<span>
+							<span className="block text-center">
 								Have an account?
 								<a
 									onClick={() => {
