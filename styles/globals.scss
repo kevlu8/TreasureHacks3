@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+$font-mono: ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono",
+	"Roboto Mono", "Oxygen Mono", "Ubuntu Monospace", "Source Code Pro",
+	"Fira Mono", "Droid Sans Mono", "Courier New", monospace;
+
+$text-primary: #007bc7;
+$text-primary-variant: #0098f7; // for hovers, etc.
+$text-header: #ffffffe6;
+$text-body: #ffffff99;
+$bg-primary: #111d25;
+$bg-secondary: #1c2830;
+$bg-tertiary: #202c34;
+$border: #ffffff0d;
+
+* {
+	box-sizing: border-box;
+	padding: 0;
+	margin: 0;
+	font-size: 1rem;
+}
+
+html,
+body {
+	max-width: 100vw;
+	overflow-x: hidden;
+	scroll-behavior: smooth;
+}
+
+html {
+	background-color: $bg-primary;
+}
+
+.animate-underline {
+  display: inline-block;
+  position: relative;
+	
+	.text-underline {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		width: 100%;
+		height: 1px;
+		background-color: $text-primary-variant;
+		transform: scaleX(0);
+		opacity: 0;
+		transition: transform 250ms ease-out, opacity 250ms ease-out;
+	}
+
+	&:hover {
+		.text-underline {
+			transform: scaleX(1);
+			opacity: 1;
+		}
+	}
+}
