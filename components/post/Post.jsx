@@ -11,7 +11,7 @@ function Post(props) {
     return (
 			<a
 				href={`/${skill.name}/${id}`}
-                className="z-10 max-w-[40rem] px-4 py-2 block flex-row justify-center items-center mt-8 bg-bg-tertiary rounded-lg border border-border"
+                className="z-10 min-w-[40rem] max-w-[40rem] px-4 py-2 block flex-row justify-center items-center mt-8 bg-bg-tertiary rounded-lg border border-border"
             >
 				<div className="flex flex-row align-center border-b-[0.1rem] border-border">
 					<Image

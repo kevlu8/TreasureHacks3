@@ -13,7 +13,7 @@ function Modal(props) {
 				onClick={updateShow}
 				className={`z-50 bg-${bgColor} opacity-100 border border-border shadow-2xl text-2xl text-text-body my-4 py-8 px-10 inline-block rounded-lg`}
 			>
-				<span>&#x2715</span>
+				<span>&#x2715;</span>
 
 				<div className="opacity-100 flex flex-col justify-center items-center">
 					<h1 className="mb-10 text-4xl text-text-header">{title}</h1>
