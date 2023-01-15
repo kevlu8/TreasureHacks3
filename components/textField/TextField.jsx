@@ -1,8 +1,5 @@
 import React from "react";
 
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faEnvelope } from "@fortawesome/free-regular-svg-icons";
-
 function TextField(props) {
 	const { name, textType, autoComplete, val, setVal, icon, mb, required } = props;
 

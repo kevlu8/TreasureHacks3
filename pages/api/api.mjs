@@ -15,406 +15,369 @@ import express from "express";
 // const bodyparser = require("body-parser");
 import bodyparser from "body-parser";
 
-var db;
-
 const app = express();
 app.use(bodyparser.json());
-app.use((req, res, next) => {
-	console.log("got a request");
-	db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READWRITE);
-	next();
-	db.close();
-});
 
 dotenv.config();
 
-// export default function handler(req, res) {
-// 	console.log(req.body);
-// 	res.status(200).json({ success: true });
-// }
+// ---- TOKEN FUNCTIONS ----
+
+function generateToken(username) {
+	// token is username + current time + random 64 bytes
+	let token =
+		username + "|" + Date.now() + "|" + crypto.randomBytes(64).toString("hex");
+	// encrypt it with key
+	let key = Buffer.from(process.env.KEY, "hex");
+	let iv = crypto.randomBytes(16);
+	let cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
+	// return it
+	return (
+		Buffer.concat([cipher.update(token), cipher.final()]).toString("base64") +
+		"." +
+		iv.toString("base64")
+	);
+}
+
+function verifyToken(token) {
+	if (!token) return false;
+	token = decodeURIComponent(token);
+	// decrypt it with key
+	let key = Buffer.from(process.env.KEY, "hex");
+	let iv = Buffer.from(token.split(".")[1], "base64");
+	let cipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
+	token = Buffer.concat([
+		cipher.update(token.split(".")[0], "base64"),
+		cipher.final(),
+	])
+		.toString()
+		.split("|");
+	// check the time
+	if (Date.now() - parseInt(token[1]) > 1000 * 60 * 60 * 24 * 2) return false;
+	// return the username
+	return token[0];
+}
 
 // ---- USER FUNCTIONS ----
 
 app.post("/api/register", (req, res) => {
-	console.log("got a post");
-	if (req.method !== "POST")
-		return res.status(405).end("Can only POST to this endpoint");
-	console.log("got a post");
+	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
 	const { username, email, password } = req.body;
 	// check if the username already exists
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READWRITE);
 	db.get("SELECT * FROM users WHERE username = ?", [username], (err, row) => {
 		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
+			console.log(err.toString());
+			db.close();
+			return res.json({ success: false, error: "Internal Server Error" });
 		}
 		if (row) {
-			res.status(409).json({ error: "Username already exists" });
-			return;
+			db.close();
+			return res.json({ success: false, error: "Username already exists" });
 		}
+		// hash the password with salt and pepper
+		let salt = crypto.randomBytes(64);
+		let pepper = Buffer.from(process.env.PEPPER, "hex");
+		let hash = crypto.pbkdf2Sync(password + pepper, salt, 10000, 64, "sha512");
+		hash = hash.toString("hex");
+		// insert into database
+		db.run(
+			"INSERT INTO users (username, email, password, salt, karma) VALUES (?, ?, ?, ?, 0)",
+			[username, email, hash, salt],
+			(err) => {
+				if (err) {
+					console.log(err.toString());
+					db.close();
+					return res.json({ success: false, error: "Internal Server Error" });
+				}
+				// verify
+				db.get(
+					"SELECT * FROM users WHERE username = ?",
+					[username],
+					(err, row) => {
+						db.close();
+						if (err) {
+							console.log(err.toString());
+							return res.json({
+								success: false,
+								error: "Internal Server Error",
+							});
+						}
+						if (!row) {
+							console.log(err.toString());
+							return res.json({
+								success: false,
+								error: "Internal Server Error",
+							});
+						}
+						res.json({ success: true });
+					}
+				);
+			}
+		);
 	});
-	// hash the password with salt and pepper
-	let salt = crypto.randomBytes(64);
-	let pepper = Buffer.from(process.env.PEPPER, "hex");
-	let hash = password.pbkdf2Sync(password + pepper, salt, 10000, 64, "bcrypt");
-	hash = hash.toString("hex");
-	// insert into database
-	db.run(
-		"INSERT INTO users (username, email, password, salt, karma) VALUES (?, ?, ?, ?, 0)",
-		[username, email, hash, salt]
-	);
-	// verify
-	db.get("SELECT * FROM users WHERE username = ?", [username], (err, row) => {
-		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
-		}
-		if (!row) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
-		}
-	});
-	console.log("user registered: " + username);
-	res.status(200).json({ success: true });
-	// fs.readFile("../../data/logins.json", (err, data) => {
-	// 	if (err) {
-	// 		res.status(500).json({ error: "Internal Server Error" });
-	// 		return;
-	// 	}
-	// 	const json = JSON.parse(data);
-	// 	if (json[username]) {
-	// 		res.status(400).json({ error: "Username already exists" });
-	// 		return;
-	// 	}
-	// 	let salt = crypto.randomBytes(64);
-	// 	let pepper = Buffer.from(process.env.PEPPER, "hex");
-	// 	json[username] =
-	// 		salt.toString("hex") +
-	// 		"$" +
-	// 		password
-	// 			.pbkdf2Sync(password + pepper, salt, 10000, 64, "bcrypt")
-	// 			.toString("hex");
-	// 	fs.writeFile("data.json", JSON.stringify(json), (err) => {
-	// 		if (err) {
-	// 			res.status(500).json({ error: "Internal Server Error" });
-	// 			return;
-	// 		}
-	// 		res.status(200).json({ success: true });
-	// 	});
-	// });
 });
 
 app.post("/api/login", (req, res) => {
-	if (req.method !== "POST")
-		return res.status(405).end("Can only POST to this endpoint");
+	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
 	const { username, password } = req.body;
 	// check if the username exists
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READONLY);
 	db.get("SELECT * FROM users WHERE username = ?", [username], (err, row) => {
+		db.close();
 		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
+			console.log(err.toString());
+			return res.json({ success: false, error: "Internal Server Error" });
 		}
 		if (!row) {
-			res.status(401).json({ error: "Incorrect username or password" });
-			return;
+			return res.json({
+				success: false,
+				error: "Incorrect username or password",
+			});
 		}
 		// hash the password with salt and pepper
 		let salt = row.salt;
 		let pepper = Buffer.from(process.env.PEPPER, "hex");
-		let hash = password.pbkdf2Sync(
-			password + pepper,
-			salt,
-			10000,
-			64,
-			"bcrypt"
-		);
+		let hash = crypto.pbkdf2Sync(password + pepper, salt, 10000, 64, "sha512");
 		hash = hash.toString("hex");
 		// check if the password is correct
 		if (hash !== row.password) {
-			res.status(401).json({ error: "Incorrect username or password" });
-			return;
+			return res.json({
+				success: false,
+				error: "Incorrect username or password",
+			});
 		}
 		// generate a token
 		let token = generateToken(username);
-		// insert into database
-		db.run("INSERT INTO tokens (username, token) VALUES (?, ?)", [
-			username,
-			token,
-		]);
 		// verify
-		db.get(
-			"SELECT * FROM tokens WHERE username = ?",
-			[username],
-			(err, row) => {
-				if (err) {
-					res.status(500).json({ error: "Internal Server Error" });
-					return;
-				}
-				if (!row) {
-					res.status(500).json({ error: "Internal Server Error" });
-					return;
-				}
-			}
-		);
-		res.status(200).json({ success: true, token: token });
+		if (!verifyToken(token)) {
+			console.log(err.toString());
+			return res.json({ success: false, error: "Internal Server Error" });
+		}
+		// send the token
+		res.cookie("token", token, {
+			httpOnly: true,
+			secure: true,
+			sameSite: "strict",
+			expires: new Date(Date.now() + 1000 * 60 * 60 * 24 * 2),
+		});
+		res.json({ success: true });
 	});
-	// fs.readFile("../../data/logins.json", (err, data) => {
-	// 	if (err) {
-	// 		res.status(500).json({ error: "Internal Server Error" });
-	// 		return;
-	// 	}
-	// 	const json = JSON.parse(data);
-	// 	if (json[username] !== password) {
-	// 		res.status(400).json({ error: "Incorrect username or password" });
-	// 		return;
-	// 	}
-	// 	res.status(200).json({ success: true });
-	// });
+});
+
+app.get("/api/user/valid", (req, res) => {
+	if (req.method !== "GET") return res.end("Can only GET this endpoint");
+	if (!req.cookies) return res.json({ success: false, error: "Unauthorized" });
+	var username = verifyToken(req.cookies.token);
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READONLY);
+	db.get("SELECT * FROM users WHERE username = ?", [username], (err, row) => {
+		db.close();
+		if (err) {
+			console.log(err.toString());
+			return res.json({ success: false, error: "Internal Server Error" });
+		}
+		if (!row) {
+			return res.json({ success: false, error: "Unauthorized" });
+		}
+		res.json({ success: true, data: row });
+	});
 });
 
 // ---- POST FUNCTIONS ----
 
 app.post("/api/post/create", (req, res) => {
-	if (req.method !== "POST")
-		return res.status(405).end("Can only POST to this endpoint");
-	if (!valid(req.body.token))
-		return res.status(401).json({ error: "Unauthorized" });
+	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
+	let username;
+	if (!req.cookies) return res.json({ success: false, error: "Unauthorized" });
+	if (!(username = verifyToken(req.cookies.token)))
+		return res.json({ success: false, error: "Unauthorized" });
 	// if client wants to create a post, call createPost, then if the user wants to upload a video, call uploadVideo
-	// check if the id exists
-	let success = false;
-	var id;
-	do {
-		id = crypto.randomBytes(3).toString("hex");
-		db.get("SELECT * FROM posts WHERE id = ?", [id], (err, row) => {
-			if (err) {
-				res.status(500).json({ error: "Internal Server Error" });
-				return;
-			}
-			if (!row) success = true;
-		});
-	} while (!success);
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READWRITE);
 	// insert into database
 	db.run(
 		"INSERT INTO posts (id, creator, skill, title, karma, description) VALUES (?, ?, ?, ?, ?)",
-		[id, req.body.username, req.body.skill, req.body.title, 0, req.body.content]
+		[id, username, req.body.skill, req.body.title, 0, req.body.content],
+		function (err) {
+			if (err) {
+				console.log(err.toString());
+				db.close();
+				return res.json({ success: false, error: "Internal Server Error" });
+			}
+			// verify
+			let id = this.lastID;
+			db.get("SELECT * FROM posts WHERE id = ?", [id], (err, row) => {
+				db.close();
+				if (err) {
+					console.log(err.toString());
+					return res.json({ success: false, error: "Internal Server Error" });
+				}
+				if (!row) {
+					console.log(err.toString());
+					return res.json({ success: false, error: "Internal Server Error" });
+				}
+				res.json({ success: true, id: id });
+			});
+		}
 	);
-	// verify
-	db.get("SELECT * FROM posts WHERE id = ?", [id], (err, row) => {
-		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
-		}
-		if (!row) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
-		}
-	});
-	res.status(200).json({ success: true, id: id });
 });
 
-app.put("/api/post/:id/upload", (req, res) => {
-	if (req.method !== "PUT")
-		return res.status(405).end("Can only PUT to this endpoint");
-	if (!valid(req.query.token))
-		return res.status(401).json({ error: "Unauthorized" });
+app.put("/api/post/:id/video", (req, res) => {
+	if (req.method !== "PUT") return res.end("Can only PUT to this endpoint");
+	if (!req.cookies) return res.json({ success: false, error: "Unauthorized" });
+	var username = verifyToken(req.cookies.token);
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READONLY);
 	// check if the id exists
 	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
+		db.close();
 		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
+			console.log(err.toString());
+			return res.json({ success: false, error: "Internal Server Error" });
 		}
 		if (!row) {
-			res.status(404).json({ error: "Post does not exist" });
-			return;
+			return res.json({ success: false, error: "Post does not exist" });
 		}
 		// make sure the user is the creator of the post
-		if (row.creator !== req.query.username) {
-			res
-				.status(403)
-				.json({ error: "Cannot upload a video to someone else's post" });
+		if (row.creator !== username) {
+			res.json({
+				success: false,
+				error: "Cannot upload a video to someone else's post",
+			});
 			return;
 		}
 		// save into ../../data/videos/(id).mp4
-		const file = fs.createWriteStream(`../../data/videos/${req.query.id}.mp4`);
+		const file = fs.createWriteStream(`../../data/videos/${req.params.id}.mp4`);
 		req.pipe(file);
 		req.on("end", () => {
-			res.status(200).json({ success: true });
+			res.json({ success: true });
 		});
 	});
-	// // save into ../../data/videos/(id).mp4
-	// const file = fs.createWriteStream(`../../data/videos/${req.body.id}.mp4`);
-	// req.pipe(file);
-	// req.on("end", () => {
-	// 	res.status(200).json({ success: true });
-	// });
+});
 
-	// // save data into posts.json
-	// let data;
-	// fs.readFile("../../data/posts.json", (err, data) => {
-	// 	if (err) {
-	// 		res.status(500).json({ error: "Internal Server Error" });
-	// 		return;
-	// 	}
-	// 	const json = JSON.parse(data);
-	// 	json[req.body.id] = {
-	// 		title: req.body.title,
-	// 		description: req.body.description,
-	// 		skill: req.body.skill,
-	// 		userId: req.body.userId,
-	// 		karma: 0,
-	// 		reports: 0,
-	// 		comments: [],
-	// 	};
-	// 	data = JSON.stringify(json);
-	// });
-	// fs.writeFile("../../data/posts.json", data, (err) => {
-	// 	if (err) {
-	// 		res.status(500).json({ error: "Internal Server Error" });
-	// 		return;
-	// 	}
-	// });
+app.get("/api/post/:id/video", (req, res) => {
+	if (req.method !== "GET") return res.end("Can only GET this endpoint");
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READONLY);
+	// check if the id exists
+	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
+		db.close();
+		if (err) {
+			console.log(err.toString());
+			return res.json({ success: false, error: "Internal Server Error" });
+		}
+		if (!row) {
+			return res.json({ success: false, error: "Post does not exist" });
+		}
+		// send the video
+		res.sendFile(
+			path.join(__dirname, `../../data/videos/${req.params.id}.mp4`)
+		);
+	});
 });
 
 app.post("/api/post/:id/comment", (req, res) => {
-	if (req.method !== "POST")
-		return res.status(405).end("Can only POST to this endpoint");
-	if (!valid(req.body.token))
-		return res.status(401).json({ error: "Unauthorized" });
+	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
+	if (!req.cookies) return res.json({ success: false, error: "Unauthorized" });
+	if (!verifyToken(req.cookies.token))
+		return res.json({ success: false, error: "Unauthorized" });
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READWRITE);
 	// check if the id exists
 	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
 		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
+			console.log(err.toString());
+			db.close();
+			return res.json({ success: false, error: "Internal Server Error" });
 		}
 		if (!row) {
-			res.status(404).json({ error: "Post does not exist" });
-			return;
+			db.close();
+			return res.json({ success: false, error: "Post does not exist" });
 		}
-		let success = false;
-		var id;
-		do {
-			id = crypto.randomBytes(3).toString("hex");
-			db.get("SELECT * FROM comments WHERE id = ?", [id], (err, row) => {
-				if (err) {
-					res.status(500).json({ error: "Internal Server Error" });
-					return;
-				}
-				if (!row) success = true;
-			});
-		} while (!success);
 		// insert into database
 		db.run(
-			"INSERT INTO comments (id, parent, creator, flags, karma, content) VALUES (?, ?, ?, ?, ?, ?)",
-			[id, req.post.id, req.body.user, 0, 0, req.body.comment]
+			"INSERT INTO comments (parent, creator, flags, karma, content) VALUES (?, ?, ?, ?, ?, ?)",
+			[req.post.id, req.body.user, 0, 0, req.body.comment],
+			function (err) {
+				db.close();
+				if (err) {
+					console.log(err.toString());
+					return res.json({ success: false, error: "Internal Server Error" });
+				}
+				res.json({ success: true, id: this.lastID });
+			}
 		);
-		res.status(200).json({ success: true });
 	});
-	// save data into posts.json
-	// let data;
-	// fs.readFile("../../data/posts.json", (err, data) => {
-	// 	if (err) {
-	// 		res.status(500).json({ error: "Internal Server Error" });
-	// 		return;
-	// 	}
-	// 	const json = JSON.parse(data);
-	// 	json[req.body.postId].comments.push({
-	// 		userId: req.body.userId,
-	// 		comment: req.body.comment,
-	// 		karma: 0,
-	// 		reports: 0,
-	// 	});
-	// 	data = JSON.stringify(json);
-	// });
-	// fs.writeFile("../../data/posts.json", data, (err) => {
-	// 	if (err) {
-	// 		res.status(500).json({ error: "Internal Server Error" });
-	// 		return;
-	// 	}
-	// });
 });
 
 app.post("/api/post/:id/upvote", (req, res) => {
-	if (req.method !== "POST")
-		return res.status(405).end("Can only POST to this endpoint");
-	if (!valid(req.body.token))
-		return res.status(401).json({ error: "Unauthorized" });
+	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
+	if (!req.cookies) return res.json({ success: false, error: "Unauthorized" });
+	if (!verifyToken(req.cookies.token))
+		return res.json({ success: false, error: "Unauthorized" });
 	// check if the id exists
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READWRITE);
 	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
 		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
+			console.log(err.toString());
+			db.close();
+			return res.json({ success: false, error: "Internal Server Error" });
 		}
 		if (!row) {
-			res.status(404).json({ error: "Post does not exist" });
-			return;
+			db.close();
+			return res.json({ success: false, error: "Post does not exist" });
 		}
 		// update database
-		db.run("UPDATE posts SET karma = karma + 1 WHERE id = ?", [req.params.id]);
-		res.status(200).json({ success: true });
+		db.run(
+			"UPDATE posts SET karma = karma + 1 WHERE id = ?",
+			[req.params.id],
+			(err) => {
+				db.close();
+				if (err) {
+					console.log(err.toString());
+					return res.json({ success: false, error: "Internal Server Error" });
+				}
+				res.json({ success: true });
+			}
+		);
 	});
-	// // req.body.postId
-	// let data;
-	// fs.readFile("../../data/posts.json", (err, data) => {
-	// 	if (err) {
-	// 		res.status(500).json({ error: "Internal Server Error" });
-	// 		return;
-	// 	}
-	// 	const json = JSON.parse(data);
-	// 	json[req.body.postId].karma++;
-	// 	data = JSON.stringify(json);
-	// });
-	// fs.writeFile("../../data/posts.json", data, (err) => {
-	// 	if (err) {
-	// 		res.status(500).json({ error: "Internal Server Error" });
-	// 		return;
-	// 	}
-	// });
 });
 
 app.post("/api/post/:id/downvote", (req, res) => {
-	if (req.method !== "POST")
-		return res.status(405).end("Can only POST to this endpoint");
-	if (!valid(req.body.token))
-		return res.status(401).json({ error: "Unauthorized" });
+	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
+	if (!req.cookies) return res.json({ success: false, error: "Unauthorized" });
+	if (!verifyToken(req.cookies.token))
+		return res.json({ success: false, error: "Unauthorized" });
 	// check if the id exists
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READWRITE);
 	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
 		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
+			console.log(err.toString());
+			db.close();
+			return res.json({ success: false, error: "Internal Server Error" });
 		}
 		if (!row) {
-			res.status(404).json({ error: "Post does not exist" });
-			return;
+			db.close();
+			return res.json({ success: false, error: "Post does not exist" });
 		}
 		// update database
-		db.run("UPDATE posts SET karma = karma - 1 WHERE id = ?", [req.params.id]);
-		res.status(200).json({ success: true });
+		db.run(
+			"UPDATE posts SET karma = karma - 1 WHERE id = ?",
+			[req.params.id],
+			(err) => {
+				db.close();
+				if (err) {
+					console.log(err.toString());
+					return res.json({ success: false, error: "Internal Server Error" });
+				}
+				res.json({ success: true });
+			}
+		);
 	});
-	// let data;
-	// fs.readFile("../../data/posts.json", (err, data) => {
-	// 	if (err) {
-	// 		res.status(500).json({ error: "Internal Server Error" });
-	// 		return;
-	// 	}
-	// 	const json = JSON.parse(data);
-	// 	json[req.body.postId].karma--;
-	// 	data = JSON.stringify(json);
-	// });
-	// fs.writeFile("../../data/posts.json", data, (err) => {
-	// 	if (err) {
-	// 		res.status(500).json({ error: "Internal Server Error" });
-	// 		return;
-	// 	}
-	// });
 });
 
 app.post("/api/post/:id/report", (req, res) => {
-	if (req.method !== "POST")
-		return res.status(405).end("Can only POST to this endpoint");
+	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
 	let data, check, msgcontent;
 	fs.readFile("../../data/posts.json", (err, data) => {
 		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
+			console.log(err.toString());
+			return res.json({ success: false, error: "Internal Server Error" });
 		}
 		const json = JSON.parse(data);
 		json[req.body.postId].reports++;
@@ -428,8 +391,8 @@ app.post("/api/post/:id/report", (req, res) => {
 	});
 	fs.writeFile("../../data/posts.json", data, (err) => {
 		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
+			console.log(err.toString());
+			return res.json({ success: false, error: "Internal Server Error" });
 		}
 	});
 	if (check) {
@@ -439,8 +402,8 @@ app.post("/api/post/:id/report", (req, res) => {
 			let data;
 			fs.readFile("../../data/posts.json", (err, data) => {
 				if (err) {
-					res.status(500).json({ error: "Internal Server Error" });
-					return;
+					console.log(err.toString());
+					return res.json({ success: false, error: "Internal Server Error" });
 				}
 				const json = JSON.parse(data);
 				delete json[req.body.postId];
@@ -448,8 +411,8 @@ app.post("/api/post/:id/report", (req, res) => {
 			});
 			fs.writeFile("../../data/posts.json", data, (err) => {
 				if (err) {
-					res.status(500).json({ error: "Internal Server Error" });
-					return;
+					console.log(err.toString());
+					return res.json({ success: false, error: "Internal Server Error" });
 				}
 			});
 		}
@@ -457,55 +420,20 @@ app.post("/api/post/:id/report", (req, res) => {
 });
 
 app.post("/api/post/:pid/comment/:cid/upvote", (req, res) => {
-	if (req.method !== "POST")
-		return res.status(405).end("Can only POST to this endpoint");
-	let data;
-	fs.readFile("../../data/posts.json", (err, data) => {
-		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
-		}
-		const json = JSON.parse(data);
-		json[req.body.postId].comments[req.body.commentId].karma++;
-		data = JSON.stringify(json);
-	});
-	fs.writeFile("../../data/posts.json", data, (err) => {
-		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
-		}
-	});
+	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
 });
 
 app.post("/api/post/:pid/comment/:cid/downvote", (req, res) => {
-	if (req.method !== "POST")
-		return res.status(405).end("Can only POST to this endpoint");
-	let data;
-	fs.readFile("../../data/posts.json", (err, data) => {
-		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
-		}
-		const json = JSON.parse(data);
-		json[req.body.postId].comments[req.body.commentId].karma--;
-		data = JSON.stringify(json);
-	});
-	fs.writeFile("../../data/posts.json", data, (err) => {
-		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
-		}
-	});
+	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
 });
 
 app.post("/api/post/:pid/comment/:cid/report", (req, res) => {
-	if (req.method !== "POST")
-		return res.status(405).end("Can only POST to this endpoint");
+	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
 	let data, check, msgcontent;
 	fs.readFile("../../data/posts.json", (err, data) => {
 		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
+			console.log(err.toString());
+			return res.json({ success: false, error: "Internal Server Error" });
 		}
 		const json = JSON.parse(data);
 		json[req.body.postId].comments[req.body.commentId].reports++;
@@ -517,8 +445,8 @@ app.post("/api/post/:pid/comment/:cid/report", (req, res) => {
 	});
 	fs.writeFile("../../data/posts.json", data, (err) => {
 		if (err) {
-			res.status(500).json({ error: "Internal Server Error" });
-			return;
+			console.log(err.toString());
+			return res.json({ success: false, error: "Internal Server Error" });
 		}
 	});
 	if (check) {
@@ -528,8 +456,8 @@ app.post("/api/post/:pid/comment/:cid/report", (req, res) => {
 			let data;
 			fs.readFile("../../data/posts.json", (err, data) => {
 				if (err) {
-					res.status(500).json({ error: "Internal Server Error" });
-					return;
+					console.log(err.toString());
+					return res.json({ success: false, error: "Internal Server Error" });
 				}
 				const json = JSON.parse(data);
 				delete json[req.body.postId].comments[req.body.commentId];
@@ -537,8 +465,8 @@ app.post("/api/post/:pid/comment/:cid/report", (req, res) => {
 			});
 			fs.writeFile("../../data/posts.json", data, (err) => {
 				if (err) {
-					res.status(500).json({ error: "Internal Server Error" });
-					return;
+					console.log(err.toString());
+					return res.json({ success: false, error: "Internal Server Error" });
 				}
 			});
 		}
@@ -547,20 +475,87 @@ app.post("/api/post/:pid/comment/:cid/report", (req, res) => {
 
 // ---- GET FUNCTIONS ----
 
-app.get("/api/post/:id/comments", (req, res) => {
-	if (req.method !== "GET")
-		return res.status(405).end("Can only GET this endpoint");
+app.get("/api/posts", (req, res) => {
+	if (req.method !== "GET") return res.end("Can only GET this endpoint");
+	// query database for post ids
+	var db = new sqlite3.Database("../../data/posts.db", sqlite3.OPEN_READONLY);
+	db.all("SELECT id FROM posts", (err, rows) => {
+		db.close();
+		if (err) {
+			console.log(err.toString());
+			return res.json({ success: false, error: "Internal Server Error" });
+		}
+		// return array of post ids
+		return res.json({ success: true, data: rows });
+	});
 });
 
-function getPosts(req, res) {
-	if (req.body.skill === "all") {
-		// do stuff
-	} else {
-		// do stuff
-	}
-}
+app.get("/api/posts/search", (req, res) => {
+	if (req.method !== "GET") return res.end("Can only GET this endpoint");
+	// query database for post ids
+	var db = new sqlite3.Database("../../data/posts.db", sqlite3.OPEN_READONLY);
+	db.all(
+		"SELECT id FROM posts WHERE title LIKE %?%",
+		[req.query.q],
+		(err, rows) => {
+			db.close();
+			if (err) {
+				console.log(err.toString());
+				return res.json({ success: false, error: "Internal Server Error" });
+			}
+			// return array of post ids
+			return res.json({ success: true, data: rows });
+		}
+	);
+});
 
-// --------- ASYNC FUNCTIONS ---------
+app.get("/api/skill/:id/posts", (req, res) => {
+	if (req.method !== "GET") return res.end("Can only GET this endpoint");
+});
+
+app.get("/api/post/:id/comments", (req, res) => {
+	if (req.method !== "GET") return res.end("Can only GET this endpoint");
+});
+
+app.get("/api/post/:id", (req, res) => {
+	if (req.method !== "GET") return res.end("Can only GET this endpoint");
+	// query database for post
+	var db = new sqlite3.Database("../../data/posts.db", sqlite3.OPEN_READONLY);
+	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
+		db.close();
+		if (err) {
+			console.log(err.toString());
+			return res.json({ success: false, error: "Internal Server Error" });
+		}
+		if (!row) {
+			return res.json({ success: false, error: "Post not found" });
+		}
+		return res.json({ success: true, data: row });
+	});
+});
+
+app.get("/api/post/:pid/comment/:cid", (req, res) => {
+	if (req.method !== "GET") return res.end("Can only GET this endpoint");
+	// query database for comment (by post id and comment id)
+	var db = new sqlite3.Database("../../data/posts.db", sqlite3.OPEN_READONLY);
+	db.get(
+		"SELECT * FROM comments WHERE parent = ? AND id = ?",
+		[req.params.pid, req.params.cid],
+		(err, row) => {
+			db.close();
+			if (err) {
+				console.log(err.toString());
+				return res.json({ success: false, error: "Internal Server Error" });
+			}
+			if (!row) {
+				return res.json({ success: false, error: "Comment not found" });
+			}
+			return res.json({ success: true, data: row });
+		}
+	);
+});
+
+// ---------  FUNCTIONS ---------
 
 async function __verifyReport(msg) {
 	const api = new chatgpt.ChatGPTAPIBrowser({
@@ -594,7 +589,7 @@ async function stagingAnswer(req, res) {
 
 	const result = await api.sendMessage(req.body.question);
 
-	res.status(200).json({ answer: result.response });
+	res.json({ answer: result.response });
 }
 
 app.listen(3001);

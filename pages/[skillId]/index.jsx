@@ -9,3 +9,4 @@ function Skill(props) {
 }
 
 export default Skill;
+
