@@ -7,9 +7,9 @@ function TextArea(props) {
         <textarea 
             classname="text-lg"
             placeholder={placeholder} 
-            val={val} 
+            value={val} 
             onChange={setVal}
-            className={`${bg} max-h-[25vh] outline-none border border-border w-full px-3 py-1 shadow-lg text-lg rounded-lg transition-color duration-300 ease-in-out hover:bg-bg-secondary`} 
+            className={`${bg} max-h-[25vh] text-text-body outline-none border border-border w-full px-3 py-1 shadow-lg text-lg rounded-lg transition-color duration-300 ease-in-out hover:bg-bg-secondary`} 
             row={row} 
             col={col} 
         />

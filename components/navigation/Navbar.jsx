@@ -4,7 +4,11 @@ import Image from "next/image";
 import axios from "axios";
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faMagnifyingGlass, faUnlockKeyhole, faKey } from "@fortawesome/free-solid-svg-icons";
+import {
+	faMagnifyingGlass,
+	faUnlockKeyhole,
+	faKey,
+} from "@fortawesome/free-solid-svg-icons";
 import { faUser, faEnvelope } from "@fortawesome/free-regular-svg-icons";
 import { faKeycdn } from "@fortawesome/free-brands-svg-icons";
 
@@ -22,57 +26,84 @@ const axiosInst = axios.create({
 });
 
 function Navbar(props) {
-	const [searchContent, setSearchContent] = useState("");	
+	const [searchContent, setSearchContent] = useState("");
 	const [showLogin, setShowLogin] = useState(false);
 	const [showRegister, setShowRegister] = useState(false);
-	const [registerData, setRegisterData] = useState({email: "", username: "", password: "", confirmPassword: ""});
+	const [registerData, setRegisterData] = useState({
+		email: "",
+		username: "",
+		password: "",
+		confirmPassword: "",
+	});
 	const [registerError, setRegisterError] = useState(false);
-	const [loginData, setLoginData] = useState({email: "", username: "", password: ""});
+	const [loginData, setLoginData] = useState({
+		email: "",
+		username: "",
+		password: "",
+	});
 	const [loginError, setLoginError] = useState(false);
 	const [showLoggedIn, setShowLoggedIn] = useState(false);
 	const [showRegistered, setShowRegistered] = useState(false);
 
+	const [userName, setUserName] = useState(false);
+	const [searchSkill, setSearchSkill] = useState("");
+	const [searchResults, setSearchResults] = useState([]);
+	
 	function setRegEmail(e) {
-		let buf = {...registerData};
+		let buf = { ...registerData };
 		buf.email = e.target.value;
 		setRegisterData(buf);
 	}
 
 	function setRegUsername(e) {
-		let buf = {...registerData};
+		let buf = { ...registerData };
 		buf.username = e.target.value;
 		setRegisterData(buf);
 	}
 
 	function setRegPassword(e) {
-		let buf = {...registerData};
+		let buf = { ...registerData };
 		buf.password = e.target.value;
 		setRegisterData(buf);
 	}
 
 	function setRegConfirmPassword(e) {
-		let buf = {...registerData};
+		let buf = { ...registerData };
 		buf.confirmPassword = e.target.value;
 		setRegisterData(buf);
 	}
 
 	function setLogEmail(e) {
-		let buf = {...loginData};
+		let buf = { ...loginData };
 		buf.email = e.target.value;
 		setLoginData(buf);
 	}
 
 	function setLogUsername(e) {
-		let buf = {...loginData};
+		let buf = { ...loginData };
 		buf.username = e.target.value;
 		setLoginData(buf);
 	}
 
 	function setLogPassword(e) {
-		let buf = {...loginData};
+		let buf = { ...loginData };
 		buf.password = e.target.value;
 		setLoginData(buf);
 	}
+
+	useEffect(() => {
+		async function call() {
+			let res = await axios.get("/api/user/valid");
+			if (res.data.success) {
+				setUserName(res.data.data.username);
+			} else {
+				setUserName(false);
+			}	
+		}
+
+		call();
+
+	}, []);
 
 	useEffect(() => {
 		if (showLogin == true) {
@@ -85,17 +116,18 @@ function Navbar(props) {
 	return (
 		<>
 			<nav className="fixed bg-fixed right-0 left-0 top-0 z-20 bg-bg-secondary border-0 border-b border-b-border py-2 px-6 flex flex-row justify-between items-center">
-				<Link href="/">
-					<Image
-						src="/logo/logo_primary.png"
-						alt="Logo"
-						width={40}
-						height={40}
-						className="rounded-lg"
-					/>
-				</Link>
-
-				<div>
+				<div className="flex">
+					<Link href="/">
+						<Image
+							src="/logo/logo_primary.png"
+							alt="Logo"
+							width={40}
+							height={40}
+							className="rounded-lg"
+						/>
+					</Link>
+				</div>
+				<div className="relative group">
 					{/* search function */}
 					{/* in mobile, hide both this AND user info, etc., basically everything except for the logo and replace with hamburger menu (similar to reddit) */}
 					<TextField
@@ -103,6 +135,17 @@ function Navbar(props) {
 						name="Search..."
 						textType="text"
 						autoComplete="off"
+						val={searchSkill}
+						setVal={(e) => {
+							let val = e.target.value;
+							setSearchSkill(val);	
+							
+							axios.get(`/api/posts/search?q=${val}`)
+								.then((data) => {
+									setSearchResults(prev => [...prev, data]);
+								})
+								
+						}}
 						icon={
 							<FontAwesomeIcon
 								icon={faMagnifyingGlass}
@@ -110,16 +153,32 @@ function Navbar(props) {
 							/>
 						}
 					/>
-					<div></div> {/* menu that comes up when search is focused on */}
+					
+					<div className="group-focus:min-h-[40px] group-active:display absolute top-[35px] pt-[5px] left-0 right-0 px-3 hidden bg-bg-tertiary border border-border rounded-b-lg">
+						{
+							searchResults.map((result) => {
+								return (
+									<div className="flex flex-row justify-between items-center">
+										<p className="text-text-primary">{result.title}</p>
+										<p className="text-text-primary">{result.author}</p>
+									</div>
+								)
+							})
+						}
+					</div>
 				</div>
 
 				<div>
-					<PrimaryButton
-						text="Login"
-						onClick={() => {
-							setShowLogin((prev) => !prev);
-						}}
-					/>
+					{userName ? (
+						<p className="text-text-primary">{userName}</p>
+					) : (
+						<PrimaryButton
+							text="Login"
+							onClick={() => {
+								setShowLogin((prev) => !prev);
+							}}
+						/>
+					)}
 				</div>
 
 				{showLogin ? (
@@ -193,6 +252,7 @@ function Navbar(props) {
 													setLoginError(res.data.error);
 												} else {
 													setShowLogin((prev) => !prev);
+													setUserName(loginData.username);
 													setShowLoggedIn(true);
 													setTimeout(() => {
 														setShowLoggedIn(false);

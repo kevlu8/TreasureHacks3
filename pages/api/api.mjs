@@ -1,31 +1,38 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
 
-// const chatgpt = require("chatgpt");
-// import chatgpt from "chatgpt";
-import { ChatGPTAPIBrowser } from "chatgpt";
-// const { ChatGPTAPIBrowser } = require("chatgpt");
-// const dotenv = require("dotenv");
+import fs from "fs";
+import url from "url";
+import path from "path";
 import dotenv from "dotenv";
-// const crypto = require("crypto");
 import crypto from "crypto";
-// const sqlite3 = require("sqlite3");
 import sqlite3 from "sqlite3";
-// const express = require("express");
 import express from "express";
-// const bodyparser = require("body-parser");
 import bodyparser from "body-parser";
+import cookieparser from "cookie-parser";
+import { Configuration, OpenAIApi } from "openai";
+
+const __filename = url.fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(bodyparser.json());
+app.use(cookieparser());
 
 dotenv.config();
+
+const configuration = new Configuration({
+	apiKey: process.env.GPT3_KEY,
+});
+const openai = new OpenAIApi(configuration);
 
 // ---- TOKEN FUNCTIONS ----
 
 function generateToken(username) {
 	// token is username + current time + random 64 bytes
-	let token =
-		username + "|" + Date.now() + "|" + crypto.randomBytes(64).toString("hex");
+	let token = Buffer.concat([
+		Buffer(username + "|" + Date.now() + "|"),
+		crypto.randomBytes(64),
+	]);
 	// encrypt it with key
 	let key = Buffer.from(process.env.KEY, "hex");
 	let iv = crypto.randomBytes(16);
@@ -169,17 +176,21 @@ app.get("/api/user/valid", (req, res) => {
 	if (!req.cookies) return res.json({ success: false, error: "Unauthorized" });
 	var username = verifyToken(req.cookies.token);
 	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READONLY);
-	db.get("SELECT * FROM users WHERE username = ?", [username], (err, row) => {
-		db.close();
-		if (err) {
-			console.log(err.toString());
-			return res.json({ success: false, error: "Internal Server Error" });
+	db.get(
+		"SELECT username, karma FROM users WHERE username = ?",
+		[username],
+		(err, row) => {
+			db.close();
+			if (err) {
+				console.log(err.toString());
+				return res.json({ success: false, error: "Internal Server Error" });
+			}
+			if (!row) {
+				return res.json({ success: false, error: "Unauthorized" });
+			}
+			res.json({ success: true, data: row });
 		}
-		if (!row) {
-			return res.json({ success: false, error: "Unauthorized" });
-		}
-		res.json({ success: true, data: row });
-	});
+	);
 });
 
 // ---- POST FUNCTIONS ----
@@ -194,8 +205,8 @@ app.post("/api/post/create", (req, res) => {
 	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READWRITE);
 	// insert into database
 	db.run(
-		"INSERT INTO posts (id, creator, skill, title, karma, description) VALUES (?, ?, ?, ?, ?)",
-		[id, username, req.body.skill, req.body.title, 0, req.body.content],
+		"INSERT INTO posts (creator, skill, title, karma, description) VALUES (?, ?, ?, ?, ?)",
+		[username, req.body.skill, req.body.title, 0, req.body.content],
 		function (err) {
 			if (err) {
 				console.log(err.toString());
@@ -252,6 +263,29 @@ app.put("/api/post/:id/video", (req, res) => {
 	});
 });
 
+app.get("/api/post/:id/hasvideo", (req, res) => {
+	if (req.method !== "GET") return res.end("Can only GET this endpoint");
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READONLY);
+	// check if the id exists
+	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
+		db.close();
+		if (err) {
+			console.log(err.toString());
+			return res.json({ success: false, error: "Internal Server Error" });
+		}
+		if (!row) {
+			return res.json({ success: false, error: "Post does not exist" });
+		}
+		// send the video
+		try {
+			fs.statSync(`../../data/videos/${req.params.id}.mp4`);
+		} catch (err) {
+			return res.json({ success: false, error: "Video does not exist" });
+		}
+		res.json({ success: true });
+	});
+});
+
 app.get("/api/post/:id/video", (req, res) => {
 	if (req.method !== "GET") return res.end("Can only GET this endpoint");
 	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READONLY);
@@ -266,6 +300,11 @@ app.get("/api/post/:id/video", (req, res) => {
 			return res.json({ success: false, error: "Post does not exist" });
 		}
 		// send the video
+		try {
+			fs.statSync(`../../data/videos/${req.params.id}.mp4`);
+		} catch (err) {
+			return res.json({ success: false, error: "Video does not exist" });
+		}
 		res.sendFile(
 			path.join(__dirname, `../../data/videos/${req.params.id}.mp4`)
 		);
@@ -275,8 +314,8 @@ app.get("/api/post/:id/video", (req, res) => {
 app.post("/api/post/:id/comment", (req, res) => {
 	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
 	if (!req.cookies) return res.json({ success: false, error: "Unauthorized" });
-	if (!verifyToken(req.cookies.token))
-		return res.json({ success: false, error: "Unauthorized" });
+	var username = verifyToken(req.cookies.token);
+	if (!username) return res.json({ success: false, error: "Unauthorized" });
 	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READWRITE);
 	// check if the id exists
 	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
@@ -291,8 +330,8 @@ app.post("/api/post/:id/comment", (req, res) => {
 		}
 		// insert into database
 		db.run(
-			"INSERT INTO comments (parent, creator, flags, karma, content) VALUES (?, ?, ?, ?, ?, ?)",
-			[req.post.id, req.body.user, 0, 0, req.body.comment],
+			"INSERT INTO comments (parent, creator, flags, karma, content) VALUES (?, ?, ?, ?, ?)",
+			[req.params.id, username, 0, 0, req.body.comment],
 			function (err) {
 				db.close();
 				if (err) {
@@ -308,67 +347,233 @@ app.post("/api/post/:id/comment", (req, res) => {
 app.post("/api/post/:id/upvote", (req, res) => {
 	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
 	if (!req.cookies) return res.json({ success: false, error: "Unauthorized" });
-	if (!verifyToken(req.cookies.token))
-		return res.json({ success: false, error: "Unauthorized" });
-	// check if the id exists
+	var username = verifyToken(req.cookies.token);
+	if (!username) return res.json({ success: false, error: "Unauthorized" });
 	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READWRITE);
-	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
-		if (err) {
-			console.log(err.toString());
-			db.close();
-			return res.json({ success: false, error: "Internal Server Error" });
-		}
-		if (!row) {
-			db.close();
-			return res.json({ success: false, error: "Post does not exist" });
-		}
-		// update database
-		db.run(
-			"UPDATE posts SET karma = karma + 1 WHERE id = ?",
-			[req.params.id],
-			(err) => {
+	// check if the user has already upvoted
+	db.get(
+		"SELECT * FROM upvotes WHERE username = ? AND post = ?",
+		[username, req.params.id],
+		(err, row) => {
+			if (err) {
+				console.log(err.toString());
 				db.close();
-				if (err) {
-					console.log(err.toString());
-					return res.json({ success: false, error: "Internal Server Error" });
-				}
-				res.json({ success: true });
+				return res.json({ success: false, error: "Internal Server Error" });
 			}
-		);
-	});
+			if (row) {
+				db.close();
+				return res.json({ success: false, error: "Already upvoted" });
+			}
+			// check if the user has already downvoted
+			db.get(
+				"SELECT * FROM downvotes WHERE username = ? AND post = ?",
+				[username, req.params.id],
+				(err, row) => {
+					if (err) {
+						console.log(err.toString());
+						db.close();
+						return res.json({ success: false, error: "Internal Server Error" });
+					}
+					if (row) {
+						// remove downvote
+						db.run(
+							"DELETE FROM downvotes WHERE username = ? AND post = ?",
+							[username, req.params.id],
+							(err) => {
+								if (err) {
+									console.log(err.toString());
+									db.close();
+									return res.json({
+										success: false,
+										error: "Internal Server Error",
+									});
+								}
+								// add upvote
+								db.run(
+									"INSERT INTO upvotes (username, post) VALUES (?, ?)",
+									[username, req.params.id],
+									(err) => {
+										if (err) {
+											console.log(err.toString());
+											db.close();
+											return res.json({
+												success: false,
+												error: "Internal Server Error",
+											});
+										}
+										// update post score
+										db.run(
+											"UPDATE posts SET karma = karma + 2 WHERE id = ?",
+											[req.params.id],
+											(err) => {
+												db.close();
+												if (err) {
+													console.log(err.toString());
+													return res.json({
+														success: false,
+														error: "Internal Server Error",
+													});
+												}
+												return res.json({ success: true });
+											}
+										);
+									}
+								);
+							}
+						);
+					} else {
+						// add upvote
+						db.run(
+							"INSERT INTO upvotes (username, post) VALUES (?, ?)",
+							[username, req.params.id],
+							(err) => {
+								if (err) {
+									console.log(err.toString());
+									db.close();
+									return res.json({
+										success: false,
+										error: "Internal Server Error",
+									});
+								}
+								// update post score
+								db.run(
+									"UPDATE posts SET karma = karma + 1 WHERE id = ?",
+									[req.params.id],
+									(err) => {
+										db.close();
+										if (err) {
+											console.log(err.toString());
+											return res.json({
+												success: false,
+												error: "Internal Server Error",
+											});
+										}
+										return res.json({ success: true });
+									}
+								);
+							}
+						);
+					}
+				}
+			);
+		}
+	);
 });
 
 app.post("/api/post/:id/downvote", (req, res) => {
 	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
 	if (!req.cookies) return res.json({ success: false, error: "Unauthorized" });
-	if (!verifyToken(req.cookies.token))
-		return res.json({ success: false, error: "Unauthorized" });
-	// check if the id exists
+	var username = verifyToken(req.cookies.token);
+	if (!username) return res.json({ success: false, error: "Unauthorized" });
 	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READWRITE);
-	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
-		if (err) {
-			console.log(err.toString());
-			db.close();
-			return res.json({ success: false, error: "Internal Server Error" });
-		}
-		if (!row) {
-			db.close();
-			return res.json({ success: false, error: "Post does not exist" });
-		}
-		// update database
-		db.run(
-			"UPDATE posts SET karma = karma - 1 WHERE id = ?",
-			[req.params.id],
-			(err) => {
+	// check if the user has already downvoted
+	db.get(
+		"SELECT * FROM downvotes WHERE username = ? AND post = ?",
+		[username, req.params.id],
+		(err, row) => {
+			if (err) {
+				console.log(err.toString());
 				db.close();
-				if (err) {
-					console.log(err.toString());
-					return res.json({ success: false, error: "Internal Server Error" });
-				}
-				res.json({ success: true });
+				return res.json({ success: false, error: "Internal Server Error" });
 			}
-		);
-	});
+			if (row) {
+				db.close();
+				return res.json({ success: false, error: "Already downvoted" });
+			}
+			// check if the user has already upvoted
+			db.get(
+				"SELECT * FROM upvotes WHERE username = ? AND post = ?",
+				[username, req.params.id],
+				(err, row) => {
+					if (err) {
+						console.log(err.toString());
+						db.close();
+						return res.json({ success: false, error: "Internal Server Error" });
+					}
+					if (row) {
+						// remove upvote
+						db.run(
+							"DELETE FROM upvotes WHERE username = ? AND post = ?",
+							[username, req.params.id],
+							(err) => {
+								if (err) {
+									console.log(err.toString());
+									db.close();
+									return res.json({
+										success: false,
+										error: "Internal Server Error",
+									});
+								}
+								// add downvote
+								db.run(
+									"INSERT INTO downvotes (username, post) VALUES (?, ?)",
+									[username, req.params.id],
+									(err) => {
+										if (err) {
+											console.log(err.toString());
+											db.close();
+											return res.json({
+												success: false,
+												error: "Internal Server Error",
+											});
+										}
+										// downdate post score
+										db.run(
+											"UPDATE posts SET karma = karma - 2 WHERE id = ?",
+											[req.params.id],
+											(err) => {
+												db.close();
+												if (err) {
+													console.log(err.toString());
+													return res.json({
+														success: false,
+														error: "Internal Server Error",
+													});
+												}
+												return res.json({ success: true });
+											}
+										);
+									}
+								);
+							}
+						);
+					} else {
+						// add downvote
+						db.run(
+							"INSERT INTO downvotes (username, post) VALUES (?, ?)",
+							[username, req.params.id],
+							(err) => {
+								if (err) {
+									console.log(err.toString());
+									db.close();
+									return res.json({
+										success: false,
+										error: "Internal Server Error",
+									});
+								}
+								// downdate post score
+								db.run(
+									"UPDATE posts SET karma = karma - 1 WHERE id = ?",
+									[req.params.id],
+									(err) => {
+										db.close();
+										if (err) {
+											console.log(err.toString());
+											return res.json({
+												success: false,
+												error: "Internal Server Error",
+											});
+										}
+										return res.json({ success: true });
+									}
+								);
+							}
+						);
+					}
+				}
+			);
+		}
+	);
 });
 
 app.post("/api/post/:id/report", (req, res) => {
@@ -421,10 +626,234 @@ app.post("/api/post/:id/report", (req, res) => {
 
 app.post("/api/post/:pid/comment/:cid/upvote", (req, res) => {
 	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
+	if (!req.cookies) return res.json({ success: false, error: "Unauthorized" });
+	var username = verifyToken(req.cookies.token);
+	if (!username) return res.json({ success: false, error: "Unauthorized" });
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READWRITE);
+	// check if the user has already upvoted
+	db.get(
+		"SELECT * FROM upvotes WHERE username = ? AND comment = ?",
+		[username, req.params.cid],
+		(err, row) => {
+			if (err) {
+				console.log(err.toString());
+				db.close();
+				return res.json({ success: false, error: "Internal Server Error" });
+			}
+			if (row) {
+				db.close();
+				return res.json({ success: false, error: "Already upvoted" });
+			}
+			// check if the user has already downvoted
+			db.get(
+				"SELECT * FROM downvotes WHERE username = ? AND comment = ?",
+				[username, req.params.cid],
+				(err, row) => {
+					if (err) {
+						console.log(err.toString());
+						db.close();
+						return res.json({ success: false, error: "Internal Server Error" });
+					}
+					if (row) {
+						// remove downvote
+						db.run(
+							"DELETE FROM downvotes WHERE username = ? AND comment = ?",
+							[username, req.params.cid],
+							(err) => {
+								if (err) {
+									console.log(err.toString());
+									db.close();
+									return res.json({
+										success: false,
+										error: "Internal Server Error",
+									});
+								}
+								// add upvote
+								db.run(
+									"INSERT INTO upvotes (username, comment) VALUES (?, ?)",
+									[username, req.params.cid],
+									(err) => {
+										if (err) {
+											console.log(err.toString());
+											db.close();
+											return res.json({
+												success: false,
+												error: "Internal Server Error",
+											});
+										}
+										// update comment score
+										db.run(
+											"UPDATE comments SET karma = karma + 2 WHERE id = ?",
+											[req.params.cid],
+											(err) => {
+												db.close();
+												if (err) {
+													console.log(err.toString());
+													return res.json({
+														success: false,
+														error: "Internal Server Error",
+													});
+												}
+												return res.json({ success: true });
+											}
+										);
+									}
+								);
+							}
+						);
+					} else {
+						// add upvote
+						db.run(
+							"INSERT INTO upvotes (username, comment) VALUES (?, ?)",
+							[username, req.params.cid],
+							(err) => {
+								if (err) {
+									console.log(err.toString());
+									db.close();
+									return res.json({
+										success: false,
+										error: "Internal Server Error",
+									});
+								}
+								// update comment score
+								db.run(
+									"UPDATE comments SET karma = karma + 1 WHERE id = ?",
+									[req.params.cid],
+									(err) => {
+										db.close();
+										if (err) {
+											console.log(err.toString());
+											return res.json({
+												success: false,
+												error: "Internal Server Error",
+											});
+										}
+										return res.json({ success: true });
+									}
+								);
+							}
+						);
+					}
+				}
+			);
+		}
+	);
 });
 
 app.post("/api/post/:pid/comment/:cid/downvote", (req, res) => {
 	if (req.method !== "POST") return res.end("Can only POST to this endpoint");
+	if (!req.cookies) return res.json({ success: false, error: "Unauthorized" });
+	var username = verifyToken(req.cookies.token);
+	if (!username) return res.json({ success: false, error: "Unauthorized" });
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READWRITE);
+	// check if the user has already downvoted
+	db.get(
+		"SELECT * FROM downvotes WHERE username = ? AND comment = ?",
+		[username, req.params.cid],
+		(err, row) => {
+			if (err) {
+				console.log(err.toString());
+				db.close();
+				return res.json({ success: false, error: "Internal Server Error" });
+			}
+			if (row) {
+				db.close();
+				return res.json({ success: false, error: "Already downvoted" });
+			}
+			// check if the user has already upvoted
+			db.get(
+				"SELECT * FROM upvotes WHERE username = ? AND comment = ?",
+				[username, req.params.cid],
+				(err, row) => {
+					if (err) {
+						console.log(err.toString());
+						db.close();
+						return res.json({ success: false, error: "Internal Server Error" });
+					}
+					if (row) {
+						// remove upvote
+						db.run(
+							"DELETE FROM upvotes WHERE username = ? AND comment = ?",
+							[username, req.params.cid],
+							(err) => {
+								if (err) {
+									console.log(err.toString());
+									db.close();
+									return res.json({
+										success: false,
+										error: "Internal Server Error",
+									});
+								}
+								// add downvote
+								db.run(
+									"INSERT INTO downvotes (username, comment) VALUES (?, ?)",
+									[username, req.params.cid],
+									(err) => {
+										if (err) {
+											console.log(err.toString());
+											db.close();
+											return res.json({
+												success: false,
+												error: "Internal Server Error",
+											});
+										}
+										// downdate comment score
+										db.run(
+											"UPDATE comments SET karma = karma - 2 WHERE id = ?",
+											[req.params.cid],
+											(err) => {
+												db.close();
+												if (err) {
+													console.log(err.toString());
+													return res.json({
+														success: false,
+														error: "Internal Server Error",
+													});
+												}
+												return res.json({ success: true });
+											}
+										);
+									}
+								);
+							}
+						);
+					} else {
+						// add downvote
+						db.run(
+							"INSERT INTO downvotes (username, comment) VALUES (?, ?)",
+							[username, req.params.cid],
+							(err) => {
+								if (err) {
+									console.log(err.toString());
+									db.close();
+									return res.json({
+										success: false,
+										error: "Internal Server Error",
+									});
+								}
+								// downdate comment score
+								db.run(
+									"UPDATE comments SET karma = karma - 1 WHERE id = ?",
+									[req.params.cid],
+									(err) => {
+										db.close();
+										if (err) {
+											console.log(err.toString());
+											return res.json({
+												success: false,
+												error: "Internal Server Error",
+											});
+										}
+										return res.json({ success: true });
+									}
+								);
+							}
+						);
+					}
+				}
+			);
+		}
+	);
 });
 
 app.post("/api/post/:pid/comment/:cid/report", (req, res) => {
@@ -478,32 +907,41 @@ app.post("/api/post/:pid/comment/:cid/report", (req, res) => {
 app.get("/api/posts", (req, res) => {
 	if (req.method !== "GET") return res.end("Can only GET this endpoint");
 	// query database for post ids
-	var db = new sqlite3.Database("../../data/posts.db", sqlite3.OPEN_READONLY);
-	db.all("SELECT id FROM posts", (err, rows) => {
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READONLY);
+	db.all("SELECT * FROM posts ORDER BY karma DESC", (err, rows) => {
 		db.close();
 		if (err) {
 			console.log(err.toString());
 			return res.json({ success: false, error: "Internal Server Error" });
 		}
-		// return array of post ids
 		return res.json({ success: true, data: rows });
 	});
+});
+
+app.get("/api/skill/:id/logo", (req, res) => {
+	if (req.method !== "GET") return res.end("Can only GET this endpoint");
+	try {
+		fs.statSync(`../../data/img/skills/${req.params.id}.png`);
+	} catch {
+		return res.status(404).end("Skill image not found");
+	}
+	return res.sendFile(path.join(__dirname, `../../data/img/skills/${req.params.id}.png`));
 });
 
 app.get("/api/posts/search", (req, res) => {
 	if (req.method !== "GET") return res.end("Can only GET this endpoint");
 	// query database for post ids
-	var db = new sqlite3.Database("../../data/posts.db", sqlite3.OPEN_READONLY);
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READONLY);
 	db.all(
-		"SELECT id FROM posts WHERE title LIKE %?%",
-		[req.query.q],
+		"SELECT * FROM posts WHERE title LIKE ? UNION SELECT * FROM posts WHERE description LIKE ?",
+		["%" + req.query.q + "%", "%" + req.query.q + "%"],
 		(err, rows) => {
 			db.close();
 			if (err) {
 				console.log(err.toString());
 				return res.json({ success: false, error: "Internal Server Error" });
 			}
-			// return array of post ids
+			// return array of posts
 			return res.json({ success: true, data: rows });
 		}
 	);
@@ -511,16 +949,70 @@ app.get("/api/posts/search", (req, res) => {
 
 app.get("/api/skill/:id/posts", (req, res) => {
 	if (req.method !== "GET") return res.end("Can only GET this endpoint");
+	// query database for skill
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READONLY);
+	db.get("SELECT * FROM skills WHERE id = ?", [req.params.id], (err, row) => {
+		if (err) {
+			console.log(err.toString());
+			db.close();
+			return res.json({ success: false, error: "Internal Server Error" });
+		}
+		if (!row) {
+			db.close();
+			return res.json({ success: false, error: "Skill not found" });
+		}
+		// query database for posts
+		db.all(
+			"SELECT * FROM posts WHERE skill = ? ORDER BY karma DESC",
+			[req.params.id],
+			(err, rows) => {
+				db.close();
+				if (err) {
+					console.log(err.toString());
+					return res.json({ success: false, error: "Internal Server Error" });
+				}
+				// return array of posts
+				return res.json({ success: true, data: rows });
+			}
+		);
+	});
 });
 
 app.get("/api/post/:id/comments", (req, res) => {
 	if (req.method !== "GET") return res.end("Can only GET this endpoint");
+	// query database for post
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READONLY);
+	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
+		if (err) {
+			console.log(err.toString());
+			db.close();
+			return res.json({ success: false, error: "Internal Server Error" });
+		}
+		if (!row) {
+			db.close();
+			return res.json({ success: false, error: "Post not found" });
+		}
+		// search for comments with post id
+		db.all(
+			"SELECT creator, flags, karma, content FROM comments WHERE parent = ? ORDER BY karma DESC",
+			[req.params.id],
+			(err, rows) => {
+				db.close();
+				if (err) {
+					console.log(err.toString());
+					return res.json({ success: false, error: "Internal Server Error" });
+				}
+				// return array of comments
+				return res.json({ success: true, data: rows });
+			}
+		);
+	});
 });
 
 app.get("/api/post/:id", (req, res) => {
 	if (req.method !== "GET") return res.end("Can only GET this endpoint");
 	// query database for post
-	var db = new sqlite3.Database("../../data/posts.db", sqlite3.OPEN_READONLY);
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READONLY);
 	db.get("SELECT * FROM posts WHERE id = ?", [req.params.id], (err, row) => {
 		db.close();
 		if (err) {
@@ -537,9 +1029,9 @@ app.get("/api/post/:id", (req, res) => {
 app.get("/api/post/:pid/comment/:cid", (req, res) => {
 	if (req.method !== "GET") return res.end("Can only GET this endpoint");
 	// query database for comment (by post id and comment id)
-	var db = new sqlite3.Database("../../data/posts.db", sqlite3.OPEN_READONLY);
+	var db = new sqlite3.Database("../../data/db.db", sqlite3.OPEN_READONLY);
 	db.get(
-		"SELECT * FROM comments WHERE parent = ? AND id = ?",
+		"SELECT id, creator, flags, karma, content FROM comments WHERE parent = ? AND id = ?",
 		[req.params.pid, req.params.cid],
 		(err, row) => {
 			db.close();
@@ -555,41 +1047,43 @@ app.get("/api/post/:pid/comment/:cid", (req, res) => {
 	);
 });
 
-// ---------  FUNCTIONS ---------
+// --------- FUNCTIONS ---------
 
 async function __verifyReport(msg) {
-	const api = new chatgpt.ChatGPTAPIBrowser({
-		email: process.env.EMAIL,
-		password: process.env.PASSWORD,
-		markdown: false,
+	const response = await openai.createCompletion({
+		model: "text-davinci-003",
+		prompt: `This comment was left on a video: "${msg}". Is this comment inappropriate? Comments that 
+		contain profanity are not considered inappropriate. However, comments that are offensive or contain hate speech or racial slurs
+		are considered inappropriate. Please respond with "yes" or "no", without punctuation and lowercase only.`,
+		temperature: 0.7,
+		max_tokens: 256,
+		top_p: 1,
+		frequency_penalty: 0,
+		presence_penalty: 0,
 	});
 
-	await api.initSession();
+	let result = response.data.choices[0].text;
 
-	const result =
-		await api.sendMessage(`This comment was left on a video: "${msg}". Is this comment inappropriate? Comments that 
-		contain profanity are not considered inappropriate. However, comments that are offensive or contain hate speech or racial slurs
-		are considered inappropriate. Please respond with "yes" or "no", without punctuation and lowercase only.`);
-
-	if (result.response === "yes") {
+	if (result.includes("yes")) {
 		return true;
 	} else {
 		return false;
 	}
 }
 
-async function stagingAnswer(req, res) {
-	const api = new chatgpt.ChatGPTAPIBrowser({
-		email: process.env.EMAIL,
-		password: process.env.PASSWORD,
-		markdown: false,
+app.post("/api/post/gpt3answer", async (req, res) => {
+	const response = await openai.createCompletion({
+		model: "text-davinci-003",
+		prompt: `Please answer this question: "${req.body.title} ${req.body.content}"`,
+		temperature: 0.7,
+		max_tokens: 256,
+		top_p: 1,
+		frequency_penalty: 0,
+		presence_penalty: 0,
 	});
 
-	await api.initSession();
-
-	const result = await api.sendMessage(req.body.question);
-
-	res.json({ answer: result.response });
-}
+	let result = response.data.choices[0].text;
+	res.json({ success: true, data: result });
+});
 
 app.listen(3001);
